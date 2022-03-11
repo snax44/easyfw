@@ -202,7 +202,7 @@ function main(){
   }
   
   function remove_ip(){
-      iptables -D INPUT -s $1 -j DROP > /dev/null 2>&1  
+    iptables $(iptables -S INPUT | grep $1 | tail -n -1 | sed '0,/A/s//D/') > /dev/null 2>&1  
   }
   
 
