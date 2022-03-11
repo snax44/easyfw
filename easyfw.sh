@@ -13,7 +13,7 @@
 DEBUG=false                                                                                         # Set to true to go directly in debug function after option parsing
 REQUIRE_ROOT=true                                                                                  # Set to true if this script need to be run as root
 REQUIRE_OPTION=true                                                                                # Set to true if this script cannot be ran without any options
-CONTINUE_ON_UNDETECTED_OS=false                                                                     # Script will continue even if the has not been correctly detected
+CONTINUE_ON_UNDETECTED_OS=true                                                                     # Script will continue even if the has not been correctly detected
 MY_REPO_URL="https://gitlab.com/snax44/easyfw"                                                      # Put here link to the git repository
 
 ###
@@ -104,8 +104,6 @@ function detect_os(){
   else
     if $CONTINUE_ON_UNDETECTED_OS; then
       msg warn "Unable to detect os. Keep going anyway in 5s"
-      sleep 5
-      main
     else
       msg ko "Unable to detect os and CONTINUE_ON_UNDETECTED_OS is set to false"
       exit 1
@@ -124,11 +122,11 @@ function detect_os(){
 ### Main function
 function main(){
 
-  function block_country(){
+  function country(){
     BASE_URL="http://www.ipdeny.com/ipblocks/data/aggregated"
     OUTPUT_FILE="/tmp/$TARGET.zone"
     
-    msg info "Let's $ACTION everythings from: $TARGET"
+    msg info "Let's $ACTION trafic from: $TARGET"
     msg info "Download the list from $BASE_URL/$TARGET-aggregated.zone"
     wget -q $BASE_URL/$TARGET-aggregated.zone -O $OUTPUT_FILE
     
@@ -137,19 +135,44 @@ function main(){
     
     SECONDS="0"
     msg info "Processing..." 
+    
+    
     if [[ "$ACTION" = "ACCEPT" ]]; then
+      iptables -N country-$TARGET > /dev/null 2>&1
+      iptables -A INPUT -j country-$TARGET > /dev/null 2>&1
+      
       for LINE in $(cat $OUTPUT_FILE); do
-        unblock_ip $LINE
+        accept_ip $LINE
       done
       
       if [[ "$?" == 0 ]]; then
-        msg ok "$NB_ENTRY were successfully removed from the firewall in $SECONDS seconds"
+        msg ok "$NB_ENTRY were successfully added as accepted rules in the firewall in $SECONDS seconds"
+      else
+        msg ko "Something wrong happened !"
+        exit
+      fi
+      iptables -A country-$TARGET -j RETURN 
+    
+    elif [[ "$ACTION" = "REMOVE" ]]; then
+      if [[ "$METHOD" = "COUNTRY" ]]; then
+        iptables -F country-$TARGET > /dev/null 2>&1
+        iptables -D INPUT -j country-$TARGET > /dev/null 2>&1
+        iptables -X country-$TARGET > /dev/null 2>&1
+      elif [[ "$METHOD" = "IP" ]]; then
+        iptables -D INPUT -s $TARGET > /dev/null 2>&1
+      fi
+
+      if [[ "$?" == 0 ]]; then
+        msg ok "$TARGET $IP has been successfully removed from the firewall in $SECONDS seconds"
       else
         msg ko "Something wrong happened !"
         exit
       fi
 
     elif [[ "$ACTION" = "DROP" ]]; then
+      iptables -N country-$TARGET > /dev/null 2>&1
+      iptables -A INPUT -j country-$TARGET > /dev/null 2>&1
+      
       for LINE in $(cat $OUTPUT_FILE); do
         block_ip $LINE
       done
@@ -157,39 +180,59 @@ function main(){
         msg ok "$NB_ENTRY were successfully added to the firewall in $SECONDS seconds"
       else
         msg ko "Something wrong happened !"
-      fi 
+      fi
+      iptables -A country-$TARGET -j RETURN 
     fi
   }
 
   function block_ip(){
-    TARGET="$1"
-    iptables -A INPUT -s $TARGET -j DROP > /dev/null 2>&1
+    if [[ "$METHOD" = "COUNTRY" ]]; then
+      iptables -A country-$TARGET -s $1 -j DROP > /dev/null 2>&1
+    else 
+      iptables -A INPUT -s $1 -j DROP > /dev/null 2>&1  
+    fi
   } 
 
-  function unblock_ip(){
-    TARGET="$1"
-    iptables -D INPUT -s $TARGET -j DROP > /dev/null 2>&1
+  function accept_ip(){
+    if [[ "$METHOD" = "COUNTRY" ]]; then
+      iptables -A country-$TARGET -s $1 -j ACCEPT > /dev/null 2>&1
+    else 
+      iptables -A INPUT -s $1 -j ACCEPT > /dev/null 2>&1  
+    fi
   }
+  
+  function remove_ip(){
+      iptables -D INPUT -s $1 -j DROP > /dev/null 2>&1  
+  }
+  
 
 
   if [[ "$METHOD" = "COUNTRY" ]]; then
-    block_country
+    country
   elif [[ "$METHOD" = "IP" ]]; then
-    if [[ "$ACTION" = "ACCEPT" ]]; then
+    if [[ "$ACTION" = "REMOVE" ]]; then
       if [[ "$TARGET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]|[12][0-9]|3[012]$ ]]; then
-        msg info "Let's $ACTION this IP bloc: $TARGET"
-        unblock_ip $TARGET
+        msg info "Let's $ACTION rule for this IP bloc: $TARGET"
+        remove_ip $TARGET
       elif [[ "$TARGET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        msg info "Let's $ACTION this IP: $TARGET"
-        unblock_ip $TARGET
+        msg info "Let's $ACTION rule for this IP: $TARGET"
+        remove_ip $TARGET
       fi
     elif [[ "$ACTION" = "DROP" ]]; then
       if [[ "$TARGET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]|[12][0-9]|3[012]$ ]]; then
-        msg info "Let's $ACTION this IP bloc: $TARGET"
+        msg info "Let's $ACTION traffic from this IP bloc: $TARGET"
         block_ip $TARGET
       elif [[ "$TARGET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        msg info "Let's $ACTION this IP: $TARGET"
+        msg info "Let's $ACTION traffic from this IP: $TARGET"
         block_ip $TARGET
+      fi
+    elif [[ "$ACTION" = "ACCEPT" ]]; then
+      if [[ "$TARGET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]|[12][0-9]|3[012]$ ]]; then
+        msg info "Let's $ACTION traffic from this IP bloc: $TARGET"
+        accept_ip $TARGET
+      elif [[ "$TARGET" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        msg info "Let's $ACTION traffic from this IP: $TARGET"
+        accept_ip $TARGET
       fi
     fi
   fi
@@ -228,6 +271,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -b | --block)
       ACTION="DROP"
+      shift 1
+      ;;
+    -r | --remove)
+      ACTION="REMOVE"
       shift 1
       ;;
     -c | --country)
