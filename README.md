@@ -22,7 +22,7 @@ Especially usefull to manage traffic from whole country
 
 **Download the script:**  
 ```console
-curl -s https://gitlab.com/snax44/easyfw/-/raw/main/easyfw.sh)
+curl -s https://gitlab.com/snax44/easyfw/-/raw/main/easyfw.sh -o easyfw.sh
 ```
 
 **Run the script:**
