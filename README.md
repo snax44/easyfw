@@ -27,5 +27,37 @@ curl -s https://gitlab.com/snax44/easyfw/-/raw/main/easyfw.sh -o easyfw.sh
 
 **Run the script:**
 ```console
-bash easyfw.sh --help
+root@debian:/home/debian# bash easyfw.sh --help
+
+Deny or Accept traffic from an IP, IP bloc or a whole country.
+
+  Usage:
+        ./easyfw.sh --help
+
+    -d  |  --debug             Dry run, only call debug function
+    -h  |  --help              Show this help
+    -a  |  --accept	       Unblock targets
+    -b  |  --block	       Block targets
+    -r  |  --remove            Remove IP, IP bloc or country rules
+    -c  |  --country	       de,fr,it,uk,us ...
+    -i  |  --ip	       	       IP or CIDR
+
+  Examples:
+    
+    All trafic from IP 1.1.1.1:
+      Deny      => ./easyfw.sh --block --ip 1.1.1.1
+      Accept    => ./easyfw.sh --accept --ip 1.1.1.1
+
+    All trafic from bloc 1.1.1.0/24:
+      Deny      => ./easyfw.sh --block --ip 1.1.1.0/24
+      Accept    => ./easyfw.sh --accept --ip 1.1.1.0/24
+
+    All trafic from Germany:
+      Deny      => ./easyfw.sh --block --country de
+      Accept    => ./easyfw.sh --accept --country de
+
+    Remove existing rules:
+      Country   => ./easyfw.sh --remove --country de
+      Single IP => ./easyfw.sh --remove --ip 1.1.1.1
+      Bloc IP   => ./easyfw.sh --remove --ip 1.1.1.0/24
 ```
