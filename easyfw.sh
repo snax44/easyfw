@@ -3,22 +3,34 @@
 #
 # Author: snax44
 # Date: 2021.08.23
-# Version: 1.0
+# Version: 2.0
 # Desc: Ban or unban easily ip or country range ip
 ###
 #############
 ### Variables
-
 # To personnalize
-DEBUG=false                                                                                         # Set to true to go directly in debug function after option parsing
-REQUIRE_ROOT=true                                                                                  # Set to true if this script need to be run as root
-REQUIRE_OPTION=true                                                                                # Set to true if this script cannot be ran without any options
-CONTINUE_ON_UNDETECTED_OS=true                                                                     # Script will continue even if the has not been correctly detected
+REQUIRE_ROOT=true                                                                                   # Set to true if this script need to be run as root
+REQUIRE_OPTION=true                                                                                 # Set to true if this script cannot be ran without any options
+CONTINUE_ON_UNDETECTED_OS=true                                                                      # Script will continue even if the has not been correctly detected
 MY_REPO_URL="https://gitlab.com/snax44/easyfw"                                                      # Put here link to the git repository
+BASE_URL="http://www.ipdeny.com/ipblocks/data/aggregated"                                           # Database where the bloc IP will be download from
+OUTPUT_FILE="/tmp/$TARGET.zone"                                                                     # Where the IP list will be stored
 
-###
+# Do not modify below
+DEBUG=false                                                                                         # Set to true to go directly in debug function after option parsing
 OS_DETECTED="$(awk '/^ID=/' /etc/*-release 2> /dev/null | awk -F'=' '{ print tolower($2) }' )"      # Get the os name
 USER_ID=$(id -u)                                                                                    # Nothing to say here
+
+# Colors
+GREEN="\\033[1;32m"
+DEFAULT="\\033[0;39m"
+DEFAULT_BOLD="\\033[1;39m"
+DEFAULT_UNDERLINED="\\033[4;39m"
+RED="\\033[1;31m"
+PINK="\\033[1;35m"
+BLUE="\\033[1;34m"
+WHITE="\\033[1;02m"
+YELLOW="\\033[1;33m"
 
 
 #####################
@@ -26,63 +38,76 @@ USER_ID=$(id -u)                                                                
 # Basic function that will be call if DEBUG is set to true
 
 function debug(){
-  cat << EOF
-
+  echo "
   Debug mode:
   -----------------------------
   Require root              : $REQUIRE_ROOT
   Require options           : $REQUIRE_OPTION
   Continue on undetected OS : $CONTINUE_ON_UNDETECTED_OS
-  Git Link                  : $MY_REPO_URL
+  Git Repository            : $MY_REPO_URL
   OS Detected               : $OS_DETECTED
   User ID                   : $USER_ID
 
   Action		    : $ACTION
   Method                    : $METHOD
-  Target                    : $TARGET
-  -----------------------------
-
-EOF
+  Target                    : $TARGET"
+  
+  if [[ "$METHOD" = "COUNTRY" ]]; then
+    echo "  List URL                  : $BASE_URL/$TARGET-aggregated.zone"
+  fi
+  
+  echo -e "  -----------------------------\n"
 }
 
 function usage(){
-  cat <<EOF
+  #cat <<EOF
+  echo -e "
+Deny or Accept traffic from an IP, IP bloc or a whole country.
 
-blablablabla
-
-  Usage:
+ $DEFAULT_UNDERLINED Usage:$DEFAULT
         $0 --help
 
-    -d  |  --debug             Do nothing dangerous, only call debug function
+    -d  |  --debug             Dry run, only call debug function
     -h  |  --help              Show this help
     -a  |  --accept	       Unblock targets
     -b  |  --block	       Block targets
+    -r  |  --remove            Remove IP, IP bloc or country rules
     -c  |  --country	       de,fr,it,uk,us ...
     -i  |  --ip	       	       IP or CIDR
 
-EOF
+ $DEFAULT_UNDERLINED Examples:$DEFAULT
+    
+   $DEFAULT_BOLD All trafic from IP 1.1.1.1:$DEFAULT
+      Deny      => $0 --block --ip 1.1.1.1
+      Accept    => $0 --accept --ip 1.1.1.1
+
+   $DEFAULT_BOLD All trafic from bloc 1.1.1.0/24:$DEFAULT
+      Deny      => $0 --block --ip 1.1.1.0/24
+      Accept    => $0 --accept --ip 1.1.1.0/24
+
+   $DEFAULT_BOLD All trafic from Germany:$DEFAULT
+      Deny      => $0 --block --country de
+      Accept    => $0 --accept --country de
+
+   $DEFAULT_BOLD Remove existing rules:$DEFAULT
+      Country   => $0 --remove --country de
+      Single IP => $0 --remove --ip 1.1.1.1
+      Bloc IP   => $0 --remove --ip 1.1.1.0/24
+"       
 }
 
 function msg(){
   # Call this function to print a beautifull colored message
   # Ex: msg ko "This is an error"
 
-  local GREEN="\\033[1;32m"
-  local NORMAL="\\033[0;39m"
-  local RED="\\033[1;31m"
-  local PINK="\\033[1;35m"
-  local BLUE="\\033[1;34m"
-  local WHITE="\\033[0;02m"
-  local YELLOW="\\033[1;33m"
-
   if [ "$1" == "ok" ]; then
-    echo -e "[$GREEN  OK  $NORMAL] $2"
+    echo -e "[$GREEN  OK  $DEFAULT] $2"
   elif [ "$1" == "ko" ]; then
-    echo -e "[$RED ERROR $NORMAL] $2"
+    echo -e "[$RED ERROR $DEFAULT] $2"
   elif [ "$1" == "warn" ]; then
-    echo -e "[$YELLOW WARN $NORMAL] $2"
+    echo -e "[$YELLOW WARN $DEFAULT] $2"
   elif [ "$1" == "info" ]; then
-    echo -e "[$BLUE INFO $NORMAL] $2"
+    echo -e "[$BLUE INFO $DEFAULT] $2"
   fi
 }
 
@@ -123,21 +148,25 @@ function detect_os(){
 function main(){
 
   function country(){
-    BASE_URL="http://www.ipdeny.com/ipblocks/data/aggregated"
-    OUTPUT_FILE="/tmp/$TARGET.zone"
+
+    function download_list(){
     
-    msg info "Let's $ACTION trafic from: $TARGET"
-    msg info "Download the list from $BASE_URL/$TARGET-aggregated.zone"
-    wget -q $BASE_URL/$TARGET-aggregated.zone -O $OUTPUT_FILE
+      msg info "Let's $ACTION trafic from: $TARGET"
+      msg info "Download the list from $BASE_URL/$TARGET-aggregated.zone"
+      wget -q $BASE_URL/$TARGET-aggregated.zone -O $OUTPUT_FILE
     
-    NB_ENTRY=$(wc -l < $OUTPUT_FILE)
-    msg info "The list has been downloaded in $OUTPUT_FILE and contain $NB_ENTRY entry."    
-    
-    SECONDS="0"
-    msg info "Processing..." 
+      NB_ENTRY=$(wc -l < $OUTPUT_FILE)
+      msg ok "The list has been downloaded in $OUTPUT_FILE and contain $NB_ENTRY entry."    
+    }
     
     
     if [[ "$ACTION" = "ACCEPT" ]]; then
+      
+      download_list
+
+      SECONDS="0"
+      msg info "Processing..." 
+      
       iptables -N country-$TARGET > /dev/null 2>&1
       iptables -A INPUT -j country-$TARGET > /dev/null 2>&1
       
@@ -170,6 +199,11 @@ function main(){
       fi
 
     elif [[ "$ACTION" = "DROP" ]]; then
+      download_list
+
+      SECONDS="0"
+      msg info "Processing..." 
+      
       iptables -N country-$TARGET > /dev/null 2>&1
       iptables -A INPUT -j country-$TARGET > /dev/null 2>&1
       
@@ -243,8 +277,8 @@ function main(){
 ### Commons checks
 
 if [ $USER_ID -ne 0 ] && $REQUIRE_ROOT ; then
-   msg ko "Oops, this script must be run as root !"
-   exit 1
+  msg ko "Oops, this script must be run as root !"
+  exit 1
 fi
 
 if [[ $# -eq 0 ]] && $REQUIRE_OPTION; then
