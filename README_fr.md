@@ -25,11 +25,7 @@ curl -s https://gitlab.com/snax44/easyfw/-/raw/main/easyfw.sh -o easyfw.sh
 
 **Executer le script**
 ```console
-bash easyfw.sh --help
-```
-
-```
-root@debian:/home/debian# ./easyfw.sh -h
+root@debian:/home/debian# bash easyfw.sh --help
 
 Deny or Accept traffic from an IP, IP bloc or a whole country.
 
